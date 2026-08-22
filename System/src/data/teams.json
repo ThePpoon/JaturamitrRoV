@@ -1,0 +1,34 @@
+[
+  {
+    "prefix": "",
+    "name": "โรงเรียนเบญจมราชูทิศ",
+    "short": "บ.ม.",
+    "logo": "ตราเบญนคร.png",
+    "color": "#ffffff",
+    "color2": "#ffffff"
+  },
+  {
+    "prefix": "โรงเรียนเบญจมราชูทิศ",
+    "name": "จันทบุรี",
+    "short": "บ.จ.",
+    "logo": "ตราเบญจันทบุรี.png",
+    "color": "#ffffff",
+    "color2": "#ffffff"
+  },
+  {
+    "prefix": "โรงเรียนเบญจมราชูทิศ",
+    "name": "ราชบุรี",
+    "short": "บ.ช.",
+    "logo": "ตราเบญราชบุรี.png",
+    "color": "#ffffff",
+    "color2": "#ffffff"
+  },
+  {
+    "prefix": "โรงเรียนเบญจมราชูทิศ",
+    "name": "ปัตตานี",
+    "short": "บ.ม.",
+    "logo": "ตราเบญปัตตานี.png",
+    "color": "#ffffff",
+    "color2": "#ffffff"
+  }
+]

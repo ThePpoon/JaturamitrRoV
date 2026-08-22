@@ -1,0 +1,1564 @@
+/* ---------- overlay สำหรับ Browser Source ใน OBS ---------- */
+/* พื้นหลังต้องโปร่งใสจริงทุกชั้น ไม่งั้น OBS จะได้กล่องดำทับภาพเกม */
+
+html.is-overlay,
+html.is-overlay body {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+html.is-overlay * {
+  box-sizing: border-box;
+}
+
+html.is-overlay {
+  --font-display: 'Barlow Condensed', 'IBM Plex Sans Thai', sans-serif;
+  --font-text: 'IBM Plex Sans Thai', 'Segoe UI', sans-serif;
+  --ink: #ffffff;
+  --panel: rgba(12, 16, 24, 0.92);
+  --panel-soft: rgba(12, 16, 24, 0.74);
+  --edge: rgba(255, 255, 255, 0.16);
+  --shadow: 0 6px 26px rgb(0 0 0 / 0.5);
+  color: var(--ink);
+  font-family: var(--font-text);
+}
+
+/* เวทีขนาดคงที่ 1920x1080 แล้วย่อ/ขยายด้วย transform
+   ทำให้ overlay หน้าตาเหมือนกันทั้งใน OBS และตอนเปิดดูในเบราว์เซอร์ปกติ */
+.stage {
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  will-change: transform;
+}
+
+/* ---------- ชิ้นส่วนที่ใช้ร่วมกัน ---------- */
+
+.crest {
+  width: 62px;
+  height: 62px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex: none;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: var(--crest, #2f6fed);
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.18);
+}
+
+.crest img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* ---------- scoreboard ---------- */
+
+/* แถบสกอร์ไม่วาดพื้นหลังของตัวเอง — พื้นหลังคือวิดีโอ animation/Score2.mp4
+   ที่วางเป็น media source อยู่ "ใต้" browser source นี้ใน OBS
+   overlay จึงมีหน้าที่วางตัวหนังสือลงในช่องว่างที่วิดีโอเว้นไว้เท่านั้น
+
+   เรียงจากซ้ายไปขวา: ชื่อรอบ · สกอร์ A · ชื่อย่อ A · แมตช์/เกม · ชื่อย่อ B · สกอร์ B
+   โดยชื่อเต็มของแต่ละทีมอยู่บนแผ่นขาวที่ห้อยใต้แถบ
+
+   ทุกชิ้นเป็น element พี่น้องกัน ไม่มีกล่องครอบ และมีตัวแปรของตัวเองครบชุด
+   x = ขอบซ้าย · y = ขอบบนของกล่อง · w = ความกว้าง · size = ขนาดตัวอักษร
+   จึงขยับทีละชิ้นได้อิสระ ทั้งซ้ายขวาและขึ้นลง ไม่มีชิ้นไหนลากชิ้นอื่นตามไป
+
+   ตัวเลขตั้งต้นวัดจากเฟรมจริงของวิดีโอบนผืนผ้าใบ 1920x1080 */
+.sb-bar {
+  /* ความสูงของกล่องที่ใช้จัดตัวหนังสือให้อยู่กึ่งกลางแถบสีม่วง
+     y ของทุกชิ้นในแถบจึงหมายถึง "0 = กึ่งกลางแถบพอดี · บวก = ลง · ลบ = ขึ้น" */
+  --sb-bar-h: 80px;
+
+  /* ชื่อรอบ เช่น "SEMI FINALS" */
+  --sb-label-x: 186px;
+  --sb-label-y: 0px;
+  --sb-label-w: 200px;
+  --sb-label-size: 34px;
+
+  /* ตัวเลขสกอร์ ซ้าย/ขวาแยกกันคนละค่า */
+  --sb-score-left-x: 390px;
+  --sb-score-left-y: -7px;
+  --sb-score-right-x: 1390px;
+  --sb-score-right-y: -7px;
+  --sb-score-w: 140px;
+  --sb-score-size: 58px;
+
+  /* โลโก้ทีม (ในแถบสีม่วง) — แสดงเฉพาะทีมที่เลือกไฟล์โลโก้ไว้ในหน้าคุม
+     y คือขอบบนของโลโก้ ไม่ใช่ offset: กึ่งกลางแถบ = (--sb-bar-h - --sb-logo-size) / 2 */
+  --sb-logo-left-x: 712px;
+  --sb-logo-left-y: 8px;
+  --sb-logo-right-x: 1147px;
+  --sb-logo-right-y: 8px;
+  --sb-logo-size: 60px;
+
+  /* ชื่อย่อทีม (ในแถบสีม่วง) */
+  --sb-abbr-left-x: 480px;
+  --sb-abbr-left-y: -7px;
+  --sb-abbr-right-x: 1120px;
+  --sb-abbr-right-y: -7px;
+  --sb-abbr-w: 313px;
+  --sb-abbr-size: 60px;
+
+  /* ข้อความแมตช์/เกม ในช่องมืดกลางแถบ */
+  --sb-center-x: 810px;
+  --sb-center-y: 0px;
+  --sb-center-w: 300px;
+  --sb-center-size: 32px;
+  --sb-center-gap: 3px;
+
+  /* ชื่อเต็มทีม บนแผ่นขาวใต้แถบ — y ตรงนี้คือขอบบนของแผ่นขาวจริง ๆ ไม่ใช่ offset */
+  --sb-plate-left-x: 522px;
+  --sb-plate-left-y: 81px;
+  --sb-plate-right-x: 1084px;
+  --sb-plate-right-y: 81px;
+  --sb-plate-w: 313px;
+  --sb-plate-h: 21px;
+  --sb-plate-inset: 16px; /* กันตัวหนังสือชนมุมเฉียงของแผ่นขาว */
+  --sb-plate-size: 15px;
+
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1920px;
+  height: 1080px;
+}
+
+/* หน้าตาที่ทุกชิ้นในแถบใช้ร่วมกัน — เหลือแค่ฟอนต์กับการจัดกึ่งกลาง
+   ส่วนตำแหน่งกับขนาดเป็นของใครของมัน อยู่ในกฎแยกข้างล่าง
+
+   ชื่อคลาสต้องขึ้นต้นด้วย sb- เสมอ — control.css ถูก import แบบ global ใน main.tsx
+   ชื่อกลาง ๆ อย่าง .slot จะไปชนกับช่องดราฟต์ในหน้าคุมแล้วได้กล่องดำมาทับแถบ */
+.sb-bar .sb-slot {
+  position: absolute;
+  height: var(--sb-bar-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  text-transform: uppercase;
+  /* ลายพื้นหลังเป็นสีม่วงสลับชมพูสด ตัวขาวล้วนจะจมเป็นบางจุด ต้องมีเงาคั่น */
+  text-shadow: 0 2px 10px rgb(0 0 0 / 0.75), 0 0 3px rgb(0 0 0 / 0.5);
+}
+
+/* ชื่อรอบยาวได้ไม่เท่ากันมาก (FINAL / QUARTER FINALS) จึงย่อขนาดเองด้วย FitText */
+.sb-label {
+  left: var(--sb-label-x);
+  top: var(--sb-label-y);
+  width: var(--sb-label-w);
+  font-size: var(--sb-label-size);
+  letter-spacing: 0.01em;
+}
+
+.sb-num {
+  width: var(--sb-score-w);
+  font-size: var(--sb-score-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-num.left {
+  left: var(--sb-score-left-x);
+  top: var(--sb-score-left-y);
+}
+
+.sb-num.right {
+  left: var(--sb-score-right-x);
+  top: var(--sb-score-right-y);
+}
+
+/* ชื่อย่อทีมกับชื่อเต็มทีมเป็นคนละชิ้นกัน วางตำแหน่งแยกกันคนละชุดตัวแปร
+   เพราะชื่อย่ออยู่บนลายกราฟิกในแถบ ส่วนชื่อเต็มต้องล็อกอยู่กับแผ่นขาวในวิดีโอ
+   ถ้าผูกไว้ด้วยกัน พอเลื่อนชื่อย่อ ชื่อเต็มจะหลุดออกนอกแผ่นขาวทันที */
+.sb-abbr {
+  width: var(--sb-abbr-w);
+  font-size: var(--sb-abbr-size);
+  letter-spacing: 0.01em;
+}
+
+.sb-abbr.left {
+  left: var(--sb-abbr-left-x);
+  top: var(--sb-abbr-left-y);
+}
+
+.sb-abbr.right {
+  left: var(--sb-abbr-right-x);
+  top: var(--sb-abbr-right-y);
+}
+
+/* โลโก้ทีมใช้กล่องเดียวกับ .crest (พื้นสีทีม มุมมน) แค่ย้ายมาวางตำแหน่งเอง
+   ขนาดกล่องเท่ากับโลโก้พอดี ไม่ได้สูงเท่าแถบเหมือนชิ้นอื่น y จึงเป็นขอบบนตรง ๆ */
+.sb-logo {
+  position: absolute;
+  width: var(--sb-logo-size);
+  height: var(--sb-logo-size);
+  border-radius: 12px;
+  font-size: calc(var(--sb-logo-size) * 0.42);
+}
+
+.sb-logo.left {
+  left: var(--sb-logo-left-x);
+  top: var(--sb-logo-left-y);
+}
+
+.sb-logo.right {
+  left: var(--sb-logo-right-x);
+  top: var(--sb-logo-right-y);
+}
+
+/* ช่องมืดกลางแถบสอบเข้าหากันจากบนลงล่าง (กว้าง 300px ที่ขอบบน เหลือ 137px ที่ขอบล่าง)
+   บรรทัด GAME จึงต้องสั้นกว่าบรรทัด MATCH เสมอ ไม่งั้นจะล้นไปทับลายสีชมพูสองข้าง */
+.sb-center {
+  left: var(--sb-center-x);
+  top: var(--sb-center-y);
+  width: var(--sb-center-w);
+  flex-direction: column;
+  gap: var(--sb-center-gap);
+  font-size: var(--sb-center-size);
+  letter-spacing: 0.01em;
+}
+
+/* ชื่อเต็มทีมบนแผ่นขาว — ตัวเข้มบนพื้นขาว ห้ามใส่พื้นหลังทับ วิดีโอวาดแผ่นขาวให้แล้ว
+   หักขอบกันชนออกจากความกว้างตรงนี้เลย ไม่ใช้ padding เพราะ FitText วัด clientWidth ของกล่องนี้
+   ถ้าใช้ padding ค่าที่วัดได้จะเกินความกว้างที่ใช้จริง แล้วชื่อยาวจะล้นออกนอกแผ่น */
+.sb-plate {
+  position: absolute;
+  height: var(--sb-plate-h);
+  width: calc(var(--sb-plate-w) - var(--sb-plate-inset) * 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sb-plate.left {
+  left: calc(var(--sb-plate-left-x) + var(--sb-plate-inset));
+  top: var(--sb-plate-left-y);
+}
+
+.sb-plate.right {
+  left: calc(var(--sb-plate-right-x) + var(--sb-plate-inset));
+  top: var(--sb-plate-right-y);
+}
+
+.sb-plate .name {
+  color: #14061c;
+  font-weight: 600;
+  font-size: var(--sb-plate-size);
+  line-height: 1;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* จุดบอกจำนวนเกมที่ชนะ อ่านง่ายกว่าตัวเลขล้วนเมื่อดูบนมือถือ */
+.pips {
+  display: flex;
+  gap: 6px;
+}
+
+.pips i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgb(255 255 255 / 0.45);
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+
+.pips i.on {
+  background: var(--crest);
+  border-color: var(--crest);
+}
+
+/* ---------- หน้าสรุปผล ---------- */
+
+.result {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  animation: fade-in 0.45s ease both;
+}
+
+.result .headline {
+  font-family: var(--font-display);
+  font-size: 34px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.result .grid {
+  display: flex;
+  align-items: center;
+  gap: 60px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 22px;
+  padding: 46px 70px;
+  box-shadow: var(--shadow);
+}
+
+.result .side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: 330px;
+}
+
+.result .side .crest {
+  width: 132px;
+  height: 132px;
+  border-radius: 22px;
+  font-size: 52px;
+}
+
+.result .side .prefix {
+  font-size: 20px;
+  letter-spacing: 0.14em;
+  opacity: 0.6;
+  line-height: 1;
+  margin-bottom: -8px;
+}
+
+.result .side .name {
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: center;
+  line-height: 1.05;
+}
+
+.result .side .team-stripe {
+  width: 130px;
+  height: 7px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--crest) 0 50%, var(--crest2, var(--crest)) 50% 100%);
+}
+
+.result .side .win {
+  font-size: 15px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #ffd66b;
+}
+
+.result .bigscore {
+  font-family: var(--font-display);
+  font-size: 150px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- ban / pick ---------- */
+
+/* หน้านี้ทำงานแบบเดียวกับแถบสกอร์ — กราฟิก overlay ที่ออกแบบไว้แล้ววางเป็น source อยู่ "ใต้"
+   browser source ใน OBS ส่วน overlay นี้โปร่งใสสนิท มีหน้าที่เติมของลงในช่องที่กราฟิกเว้นไว้เท่านั้น
+
+   กราฟิกวาดให้แล้ว ห้ามวาดซ้ำ: ป้าย BAN · โลโก้+ชื่อรายการ · คำว่า VS · กรอบช่องทุกช่อง ·
+   แถบสีชมพูใต้ช่องเลือก · พื้นหลังทั้งหมด
+
+   >>> ตัวเลขชุดนี้ยัง "ประมาณจากภาพตัวอย่าง" ไม่ได้วัดจากไฟล์จริง <<<
+   เอาไฟล์กราฟิกมาวางใน animation/ แล้ววัดใหม่จะตรงเป๊ะกว่านี้
+   ระหว่างนี้ขยับเองได้ทุกชิ้นจากตัวแปรข้างล่าง หน่วยเป็น px บนผืนผ้าใบ 1920x1080 */
+.bp {
+  /* แถวแบน — x วัดจากขอบซ้าย/ขวาของจอเข้ามาหาช่องแรกของแต่ละฝั่ง */
+  --bp-ban-y: 722px;
+  --bp-ban-w: 78px;
+  --bp-ban-h: 71px;
+  --bp-ban-gap: 20px;
+  --bp-ban-left-x: 113.5px;
+  --bp-ban-right-x: 112px;
+
+  /* แถวเลือก — การ์ดหนึ่งใบ = รูปฮีโร่ + แถบชื่อผู้เล่นใต้รูป */
+  --bp-pick-y: 829.5px;
+  --bp-pick-h: 216px;
+  --bp-card-w: 131.4px;
+  --bp-card-gap: 6px;
+  --bp-pick-left-x: 0px;
+  --bp-pick-right-x: -3.8px;
+  --bp-name-y: 1048px;
+  --bp-name-h: 36px;
+  --bp-name-size: 17px;
+
+  /* แผงกลาง */
+  --bp-logo-left-x: 720px;
+  --bp-logo-right-x: 1090px;
+  --bp-logo-y: 860px;
+  --bp-logo-size: 116px;
+
+  --bp-sc-left-x: 860px;
+  --bp-sc-right-x: 993px;
+  --bp-sc-y: 860px;
+  --bp-sc-w: 66px;
+  --bp-sc-h: 62px;
+  --bp-sc-size: 50px;
+
+  /* สีเรืองแสงของช่องที่ถึงตาเลือก เก็บเป็น 3 ค่า R G B (ไม่มี rgb()) เพื่อผสม alpha ได้หลายชั้น
+     ชั้นในใช้สีสว่าง ชั้นนอกใช้สีเข้มกว่า จะได้แสงที่ค่อย ๆ จางออกแทนขอบตัดคม */
+  --bp-glow-in: 236 110 255;
+  --bp-glow-out: 150 40 230;
+
+  --bp-clock-y: 944px;
+  --bp-clock-size: 80px;
+  --bp-mg-y: 1058px;
+  --bp-mg-size: 17px;
+
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------- ช่องแบน ---------- */
+
+.bp-bans {
+  position: absolute;
+  top: var(--bp-ban-y);
+  height: var(--bp-ban-h);
+  display: flex;
+  gap: var(--bp-ban-gap);
+}
+
+.bp-bans.left {
+  left: var(--bp-ban-left-x);
+}
+
+/* ฝั่งขวานับจากขอบขวาเข้ามา แล้วเรียงกลับด้าน ตาแบนแรกจะได้อยู่ริมนอกเหมือนฝั่งซ้าย */
+.bp-bans.right {
+  right: var(--bp-ban-right-x);
+  flex-direction: row-reverse;
+}
+
+.bp-ban {
+  position: relative;
+  width: var(--bp-ban-w);
+  height: var(--bp-ban-h);
+  overflow: hidden;
+}
+
+/* ตัวที่แบนไปแล้วทำเป็นขาวดำ + ขีดทับ ให้แยกจากตัวที่ถูกเลือกได้ทันที */
+.bp-ban.filled .pic {
+  filter: grayscale(1) brightness(0.72);
+}
+
+.bp-ban.filled::after {
+  content: '';
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  top: 50%;
+  height: 2px;
+  background: #ff4d4d;
+  transform: rotate(-32deg);
+  z-index: 2;
+}
+
+/* ---------- ช่องเลือก ---------- */
+
+.bp-picks {
+  position: absolute;
+  top: var(--bp-pick-y);
+  height: calc(var(--bp-name-y) + var(--bp-name-h) - var(--bp-pick-y));
+  display: flex;
+  gap: var(--bp-card-gap);
+}
+
+.bp-picks.left {
+  left: var(--bp-pick-left-x);
+}
+
+.bp-picks.right {
+  right: var(--bp-pick-right-x);
+  flex-direction: row-reverse;
+}
+
+.bp-card {
+  position: relative;
+  width: var(--bp-card-w);
+}
+
+.bp-card .port {
+  position: relative;
+  height: var(--bp-pick-h);
+  overflow: hidden;
+}
+
+/* ช่องที่ระบบกำลังรอกรอกอยู่ ต้องเห็นจากอีกฝั่งห้องได้ ไม่ใช่แค่เส้นขอบบาง ๆ
+   ใช้ inset shadow เพราะกรอบจริงเป็นของกราฟิก ถ้าวาดขอบทับจะเบิ้ลกับกรอบเดิม */
+.bp-card.active .port,
+.bp-ban.active {
+  box-shadow: inset 0 0 0 3px #ffd66b, 0 0 22px rgb(255 214 107 / 0.5);
+}
+
+/* ชื่อผู้เล่นวางบนแถบสีชมพูที่กราฟิกวาดไว้ — ห้ามใส่พื้นหลังทับ */
+.bp-card .who {
+  position: absolute;
+  top: calc(var(--bp-name-y) - var(--bp-pick-y));
+  left: 0;
+  right: 0;
+  height: var(--bp-name-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--bp-name-size);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
+}
+
+/* รูปฮีโร่ใช้ cover เพราะไฟล์ส่วนใหญ่เป็นจัตุรัส แต่ช่องเป็นแนวตั้ง
+   ถ้าใช้ contain จะเหลือขอบว่างบนล่างเยอะจนเห็นพื้นกราฟิกโหว่ */
+.bp .pic {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.bp .pic img {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bp .pic .fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---------- แผงกลาง ---------- */
+
+.bp-logo {
+  position: absolute;
+  top: var(--bp-logo-y);
+  width: var(--bp-logo-size);
+  height: var(--bp-logo-size);
+  border-radius: 4px;
+  font-size: calc(var(--bp-logo-size) * 0.32);
+}
+
+.bp-logo.left {
+  left: var(--bp-logo-left-x);
+}
+
+.bp-logo.right {
+  left: var(--bp-logo-right-x);
+}
+
+.bp-sc {
+  position: absolute;
+  top: var(--bp-sc-y);
+  width: var(--bp-sc-w);
+  height: var(--bp-sc-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: var(--bp-sc-size);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 10px rgb(0 0 0 / 0.8);
+}
+
+.bp-sc.left {
+  left: var(--bp-sc-left-x);
+}
+
+.bp-sc.right {
+  left: var(--bp-sc-right-x);
+}
+
+/* นาฬิกากับ MATCH/GAME จัดกึ่งกลางจอ ไม่ต้องมี x ของตัวเอง
+   เพราะกราฟิกวาง VS ไว้กลางจอพอดี สองชิ้นนี้ต้องอยู่ในแกนเดียวกันเสมอ */
+.bp-clock,
+.bp-mg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.bp-clock {
+  top: var(--bp-clock-y);
+  font-family: var(--font-display);
+  font-size: var(--bp-clock-size);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 12px rgb(0 0 0 / 0.8);
+}
+
+.bp-clock.low {
+  color: #ff6b6b;
+}
+
+.bp-mg {
+  top: var(--bp-mg-y);
+  font-size: var(--bp-mg-size);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  opacity: 0.9;
+  text-shadow: 0 1px 6px rgb(0 0 0 / 0.8);
+}
+
+/* ---------- เอฟเฟกต์หน้า ban/pick ---------- */
+
+/* เลียนจังหวะของกราฟิกลีกทางการ: ตอนเปิดตัวฮีโร่จะ "แฟลชขาววาบ" ทับทั้งช่องก่อน
+   แล้วภาพค่อยซูมออกเข้าที่พร้อมคืนสีจากขาวโพลนกลับมาปกติ ปิดท้ายด้วยแสงกวาดทแยงหนึ่งครั้ง
+
+   ทุกอันเล่นด้วย animation ไม่ใช่ transition เพราะต้องเล่น "ครั้งเดียวตอนโผล่"
+   ตัวที่สั่งให้เล่นซ้ำคือ key={id} ใน BanPick.tsx — พอเปลี่ยนฮีโร่ element ถูก mount ใหม่ animation จึงเริ่มใหม่
+
+   ระยะเวลารวม ~0.55 วิ ตั้งใจให้สั้นกว่าจังหวะกดของคนคุม จะได้ไม่หน่วงตอนดราฟต์รัว ๆ */
+.bp .pic.reveal img,
+.bp .pic.reveal .fallback {
+  animation: bp-reveal 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ชั้นขาวทับทั้งช่อง — คือตัวที่ทำให้รู้สึกว่า "วาบ" ไม่ใช่แค่เฟดเข้า */
+.bp .pic.reveal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: #fff;
+  pointer-events: none;
+  animation: bp-flash 0.45s ease-out both;
+}
+
+/* แสงกวาดทแยงตามหลังแฟลช ให้ความรู้สึกเป็นวัสดุมันวาว ไม่ใช่ภาพนิ่ง */
+.bp .pic.reveal::after {
+  content: '';
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: -60%;
+  width: 45%;
+  z-index: 4;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.75), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+  animation: bp-shine 0.7s 0.12s ease-out both;
+}
+
+@keyframes bp-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(1.18);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes bp-flash {
+  0% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes bp-shine {
+  0% {
+    left: -60%;
+  }
+  100% {
+    left: 130%;
+  }
+}
+
+/* ขีดทับตัวที่ถูกแบน ลากจากกลางออกไปสองข้าง แทนที่จะโผล่มาทั้งเส้น */
+.bp-ban.filled::after {
+  animation: bp-slash 0.4s 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes bp-slash {
+  0% {
+    transform: rotate(-32deg) scaleX(0);
+    opacity: 0;
+  }
+  100% {
+    transform: rotate(-32deg) scaleX(1);
+    opacity: 1;
+  }
+}
+
+/* ช่องที่ถึงตาเลือก — แสงม่วงหายใจเข้าออก ไม่ใช่กรอบเส้นคม
+   ซ้อน box-shadow สี่ชั้น (ขอบใน · หมอกใน · รัศมีใกล้ · รัศมีไกล) เพื่อให้แสงค่อย ๆ จางออก
+   ถ้าใช้ชั้นเดียวจะได้ขอบเรืองแสงแข็ง ๆ ไม่ฟุ้งอย่างที่ต้องการ */
+.bp-card.active .port,
+.bp-ban.active {
+  animation: bp-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes bp-pulse {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 2px rgb(var(--bp-glow-in) / 0.5),
+      inset 0 0 26px rgb(var(--bp-glow-in) / 0.28),
+      0 0 16px rgb(var(--bp-glow-in) / 0.3),
+      0 0 44px rgb(var(--bp-glow-out) / 0.26);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 2px rgb(var(--bp-glow-in) / 0.95),
+      inset 0 0 46px rgb(var(--bp-glow-in) / 0.6),
+      0 0 34px rgb(var(--bp-glow-in) / 0.6),
+      0 0 82px rgb(var(--bp-glow-out) / 0.5);
+  }
+}
+
+/* หมอกม่วงในตัวช่อง ทำให้ช่องที่ยังว่างไม่โล่งเป็นรูดำ และหายใจคนละจังหวะกับขอบเล็กน้อย
+   จังหวะที่ไม่ตรงกันเป๊ะทำให้แสงดูมีชีวิตกว่าการเต้นพร้อมกันทั้งหมด */
+.bp-card.active .port::after,
+.bp-ban.active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    rgb(var(--bp-glow-in) / 0.3) 0%,
+    rgb(var(--bp-glow-out) / 0.16) 48%,
+    transparent 74%
+  );
+  animation: bp-aura 2.3s ease-in-out infinite;
+}
+
+@keyframes bp-aura {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+/* ชื่อผู้เล่นใช้ transition ไม่ใช่ animation — คนคุมพิมพ์ทีละตัวอักษร
+   ถ้าใช้ animation ที่ผูกกับ key จะกระตุกใหม่ทุกตัวที่พิมพ์ */
+.bp-card .who {
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bp-card .who.empty {
+  opacity: 0;
+  transform: translateY(7px);
+}
+
+/* สกอร์เด้งหนึ่งครั้งตอนเปลี่ยน — ตาคนดูจะจับได้ว่าเพิ่งมีการเปลี่ยนแปลง */
+.bp-sc {
+  animation: bp-pop 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes bp-pop {
+  0% {
+    transform: scale(1.55);
+    filter: brightness(2.4);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+/* ลูกศรข้างนาฬิกา ชี้ไปทางทีมที่ถึงตาเลือก ฝั่งที่ไม่ใช่ตาจะจางลงไป */
+.bp-clock .chev {
+  display: inline-block;
+  margin: 0 0.22em;
+  opacity: 0.12;
+  transform: translateX(0);
+  transition: opacity 0.3s ease;
+}
+
+.bp-clock .chev.on {
+  opacity: 1;
+  animation: bp-chev 1.1s ease-in-out infinite;
+}
+
+/* ลูกศรซ้ายไหลไปทางซ้าย ขวาไหลไปทางขวา — ชี้ออกไปหาทีมที่ต้องเลือก */
+.bp-clock .chev.on:first-child {
+  animation-name: bp-chev-l;
+}
+
+@keyframes bp-chev-l {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-7px);
+  }
+}
+
+@keyframes bp-chev {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(7px);
+  }
+}
+
+/* วินาทีสุดท้ายให้ตัวเลขเต้นแทนการกะพริบทั้งก้อน อ่านง่ายกว่าตอนถ่ายทอดสด */
+.bp-clock.low .num {
+  display: inline-block;
+  animation: bp-tick 1s ease-in-out infinite;
+}
+
+@keyframes bp-tick {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.16);
+  }
+}
+
+/* ---------- ตารางคะแนน ---------- */
+
+/* วางทับกราฟิกตารางคะแนนที่ออกแบบไว้แล้ว — โปร่งใสสนิท เติมแค่ตัวหนังสือกับตรา
+   กราฟิกวาดหัวเรื่อง หัวคอลัมน์ กล่องสีม่วง และแถบตราสี่โรงด้านล่างให้หมดแล้ว
+
+   ตัวเลขชุดนี้วัดจากไฟล์กราฟิกจริง ROV_Overlay (6).png ด้วยการสแกนขอบกล่องทีละพิกเซล
+   กล่องในกราฟิกเป็นสี่เหลี่ยมด้านขนาน (ขอบซ้าย-ขวาเฉียง) จึงยึด "จุดกึ่งกลางแถว" เป็นหลัก
+   แล้วให้กล่องข้อความสูง --st-row-h คร่อมกึ่งกลางนั้น ข้อความจะได้อยู่กลางกล่องเสมอ
+   ไม่ว่าขอบเฉียงจะกินเข้ามาเท่าไหร่ */
+.st {
+  --st-row-y: 418px; /* ขอบบนของกล่องข้อความแถวที่ 1 (กึ่งกลางแถวจริง = 461) */
+  --st-row-h: 86px;
+  --st-row-pitch: 104px; /* ระยะจากขอบบนแถวหนึ่งไปขอบบนแถวถัดไป */
+
+  --st-rank-x: 382px;
+  --st-rank-w: 124px;
+  --st-rank-size: 54px;
+
+  --st-team-x: 518px;
+  --st-team-w: 519px;
+  --st-team-pad: 16px; /* ระยะจากขอบซ้ายกล่องถึงตรา */
+  --st-logo: 52px;
+  --st-logo-gap: 14px;
+  --st-name-size: 26px;
+  --st-prefix-size: 22px;
+  --st-watermark-size: 56px;
+  --st-watermark-alpha: 0.16;
+
+  --st-match-x: 1053px;
+  --st-match-w: 90px;
+  --st-wl-x: 1159px;
+  --st-wl-w: 148px;
+  --st-gd-x: 1323px;
+  --st-gd-w: 90px;
+  --st-pts-x: 1429px;
+  --st-pts-w: 89px;
+  --st-num-size: 48px;
+
+  position: absolute;
+  inset: 0;
+}
+
+/* แต่ละแถววางด้วย --st-i (0-3) คูณระยะห่าง จะได้ไม่ต้องเขียนพิกัดซ้ำสี่รอบ
+   เพิ่ม/ลดจำนวนแถวทีหลังก็ไม่ต้องแก้ CSS เลย */
+.st-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--st-row-y) + var(--st-i) * var(--st-row-pitch));
+  height: var(--st-row-h);
+  /* หัวใจของเอฟเฟกต์สลับอันดับ: พอ --st-i เปลี่ยน แถวจะไหลไปตำแหน่งใหม่แทนที่จะกระโดด
+     ทำงานได้ก็ต่อเมื่อ key ของแถวผูกกับทีม ไม่ใช่ index (ดู rowKey ใน Standings.tsx) */
+  transition: top 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.st-rank,
+.st-num {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 10px rgb(0 0 0 / 0.55);
+}
+
+.st-rank {
+  left: var(--st-rank-x);
+  width: var(--st-rank-w);
+  font-size: var(--st-rank-size);
+}
+
+.st-num {
+  font-size: var(--st-num-size);
+}
+
+.st-num.match {
+  left: var(--st-match-x);
+  width: var(--st-match-w);
+}
+
+.st-num.wl {
+  left: var(--st-wl-x);
+  width: var(--st-wl-w);
+}
+
+.st-num.gd {
+  left: var(--st-gd-x);
+  width: var(--st-gd-w);
+}
+
+.st-num.pts {
+  left: var(--st-pts-x);
+  width: var(--st-pts-w);
+}
+
+/* ช่องชื่อทีม — ตราชิดซ้าย ชื่อชิดตรา ต่างจากคอลัมน์ตัวเลขที่จัดกึ่งกลาง */
+.st-team {
+  position: absolute;
+  top: 0;
+  left: var(--st-team-x);
+  width: var(--st-team-w);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding-left: var(--st-team-pad);
+  overflow: hidden;
+}
+
+.st-logo {
+  position: relative;
+  z-index: 1;
+  width: var(--st-logo);
+  height: var(--st-logo);
+  object-fit: contain;
+  flex: none;
+  margin-right: var(--st-logo-gap);
+}
+
+.st-name {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  flex: 1;
+}
+
+/* ทีมที่ไม่มีไฟล์ตรา ให้ชื่อเลื่อนมาแทนที่ช่องตรา จะได้ไม่เหลือช่องว่างค้างอยู่ */
+.st-name.no-logo {
+  margin-left: 0;
+}
+
+.st-name .l1 {
+  font-size: var(--st-prefix-size);
+  letter-spacing: 0.02em;
+  margin-bottom: 3px;
+  text-shadow: 0 2px 8px rgb(0 0 0 / 0.5);
+}
+
+.st-name .l2 {
+  font-size: var(--st-name-size);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-shadow: 0 2px 8px rgb(0 0 0 / 0.5);
+}
+
+/* ชื่อโรงตัวใหญ่จาง ๆ ด้านหลังแถว ตามแบบกราฟิกที่ออกแบบไว้
+   ต้องอยู่ z-index ต่ำกว่าตรากับชื่อจริง ไม่งั้นจะบังกัน */
+.st-watermark {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  z-index: 0;
+  text-align: center;
+  font-size: var(--st-watermark-size);
+  letter-spacing: 0.04em;
+  color: rgb(255 255 255 / var(--st-watermark-alpha));
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ---------- เอฟเฟกต์ตารางคะแนน ---------- */
+
+/* แถวไหลเข้าจากซ้ายทีละแถว หน่วงตาม --st-i ที่ใช้วางตำแหน่งอยู่แล้ว
+   จึงไม่ต้องส่งเลขลำดับเข้ามาซ้ำ และถ้าเพิ่มเป็น 6 ทีมก็หน่วงถูกเองอัตโนมัติ */
+.st-row {
+  animation: st-in 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--st-i) * 0.11s);
+}
+
+/* แถวว่างไม่ต้องเล่นอะไร ไม่งั้นจะมีกล่องเปล่า ๆ ไหลเข้ามาให้งง */
+.st-row.blank {
+  animation: none;
+}
+
+@keyframes st-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-70px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* แสงกวาดผ่านช่องชื่อทีมตามหลังแถวที่เพิ่งไหลเข้า
+   วางไว้ที่ .st-team เพราะกล่องนั้น overflow:hidden อยู่แล้ว แสงจึงถูกตัดพอดีขอบ ไม่ล้นไปทับคอลัมน์อื่น */
+.st-team::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -40%;
+  width: 34%;
+  z-index: 2;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
+  transform: skewX(-18deg);
+  pointer-events: none;
+  animation: st-shine 1s ease-out both;
+  animation-delay: calc(var(--st-i) * 0.11s + 0.28s);
+}
+
+.st-row.blank .st-team::after {
+  animation: none;
+  display: none;
+}
+
+@keyframes st-shine {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 130%;
+  }
+}
+
+/* ตัวเลขเด้งหนึ่งครั้งตอนค่าเปลี่ยน — ตาคนดูจับได้ว่าแต้มเพิ่งขยับ */
+.st-rank .v,
+.st-num .v {
+  display: inline-block;
+  animation: st-pop 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes st-pop {
+  0% {
+    transform: scale(1.6);
+    filter: brightness(2.2);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+/* อันดับ 1 เรืองทองเบา ๆ ตลอดเวลา ให้แถวบนสุดเด่นกว่าแถวอื่นโดยไม่ต้องใช้สีพื้นต่าง */
+.st-row.top:not(.blank) .st-rank {
+  animation: st-crown 2.6s ease-in-out infinite;
+}
+
+@keyframes st-crown {
+  0%,
+  100% {
+    text-shadow: 0 2px 10px rgb(0 0 0 / 0.55);
+  }
+  50% {
+    text-shadow: 0 2px 10px rgb(0 0 0 / 0.55), 0 0 26px rgb(255 214 120 / 0.9), 0 0 8px rgb(255 235 190 / 0.7);
+  }
+}
+
+/* ---------- สายการแข่ง (championship bracket) ---------- */
+
+/* วางทับกราฟิก ROV_Overlay (7).png — โปร่งใสสนิท เติมแค่ตรากับชื่อทีมลงในกล่องที่กราฟิกวาดไว้
+   กราฟิกวาดหัวเรื่อง ป้ายรอบ กล่องทุกใบ เส้นโยงสาย โลโก้ ROV และคำว่า CHAMPION ให้หมดแล้ว
+
+   ตัวเลขทุกค่าวัดจากไฟล์กราฟิกจริงด้วยการสแกนขอบกล่องทีละพิกเซล
+   ตำแหน่งแนวตั้งของกล่องฝั่งซ้าย "ไม่ได้ห่างเท่ากัน" (มีป้าย LOWER FINAL คั่นกลาง)
+   จึงต้องระบุ y ทีละกล่อง ใช้สูตรคูณระยะห่างไม่ได้ */
+.bk {
+  /* กล่องทีมฝั่งซ้าย 6 ใบ */
+  --bk-team-x: 172px;
+  --bk-team-w: 199px;
+  --bk-team-h: 56px;
+  --bk-team-pad: 8px;
+  --bk-logo: 34px;
+  --bk-logo-gap: 8px;
+
+  --bk-y-usf1a: 479px;
+  --bk-y-usf1b: 549px;
+  --bk-y-usf2a: 645px;
+  --bk-y-usf2b: 714px;
+  --bk-y-lf1: 891px;
+  --bk-y-lf2: 961px;
+
+  /* กล่องม่วงกลาง (upper final) 2 ใบ */
+  --bk-slim-x: 526px;
+  --bk-slim-w: 199px;
+  --bk-slim-h: 55px;
+  --bk-y-uf1: 516px;
+  --bk-y-uf2: 664px;
+
+  /* กล่องทอง 2 ใบ */
+  --bk-lfw-x: 647px;
+  --bk-lfw-y: 910px;
+  --bk-lfw-w: 252px;
+  --bk-lfw-h: 70px;
+
+  --bk-gf-x: 890px;
+  --bk-gf-y: 573px;
+  --bk-gf-w: 251px;
+  --bk-gf-h: 70px;
+
+  --bk-tbd-size: 26px;
+  --bk-gold-size: 30px;
+
+  position: absolute;
+  inset: 0;
+}
+
+.bk-slot {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  overflow: hidden;
+}
+
+/* กล่องทีม: ตราชิดซ้าย ชื่อสองบรรทัดต่อจากตรา */
+.bk-slot.team {
+  left: var(--bk-team-x);
+  width: var(--bk-team-w);
+  height: var(--bk-team-h);
+  padding-left: var(--bk-team-pad);
+}
+
+.bk-slot.slim {
+  left: var(--bk-slim-x);
+  width: var(--bk-slim-w);
+  height: var(--bk-slim-h);
+  justify-content: center;
+  font-size: var(--bk-tbd-size);
+}
+
+.bk-slot.gold {
+  justify-content: center;
+  font-size: var(--bk-gold-size);
+}
+
+.bk-usf1a { top: var(--bk-y-usf1a); }
+.bk-usf1b { top: var(--bk-y-usf1b); }
+.bk-usf2a { top: var(--bk-y-usf2a); }
+.bk-usf2b { top: var(--bk-y-usf2b); }
+.bk-lf1 { top: var(--bk-y-lf1); }
+.bk-lf2 { top: var(--bk-y-lf2); }
+.bk-uf1 { top: var(--bk-y-uf1); }
+.bk-uf2 { top: var(--bk-y-uf2); }
+
+.bk-lfw {
+  left: var(--bk-lfw-x);
+  top: var(--bk-lfw-y);
+  width: var(--bk-lfw-w);
+  height: var(--bk-lfw-h);
+}
+
+.bk-gf {
+  left: var(--bk-gf-x);
+  top: var(--bk-gf-y);
+  width: var(--bk-gf-w);
+  height: var(--bk-gf-h);
+}
+
+.bk-logo {
+  width: var(--bk-logo);
+  height: var(--bk-logo);
+  object-fit: contain;
+  flex: none;
+  margin-right: var(--bk-logo-gap);
+}
+
+.bk-name {
+  min-width: 0;
+  flex: 1;
+}
+
+.bk-name .l1 {
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
+}
+
+.bk-name .l2 {
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  margin-top: 2px;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 0.6);
+}
+
+.bk-one {
+  white-space: nowrap;
+  text-shadow: 0 2px 8px rgb(0 0 0 / 0.6);
+}
+
+/* ช่องที่ยังไม่รู้ผล — TBD จัดกลางกล่องเสมอ ไม่ว่ากล่องนั้นปกติจะชิดซ้ายหรือไม่ */
+.bk-slot.tbd {
+  justify-content: center;
+  padding-left: 0;
+}
+
+.bk-tbd {
+  font-size: var(--bk-tbd-size);
+  letter-spacing: 0.04em;
+  text-shadow: 0 2px 8px rgb(0 0 0 / 0.6);
+}
+
+.bk-slot.gold .bk-tbd {
+  font-size: var(--bk-gold-size);
+}
+
+/* ---------- เอฟเฟกต์ ---------- */
+
+/* ไล่เข้าทีละช่องตามลำดับที่ตาอ่านสาย (ซ้ายบน -> ขวาล่าง) ใช้ --bk-i ที่ส่งมาจาก index */
+.bk-slot {
+  animation: bk-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--bk-i) * 0.075s);
+}
+
+@keyframes bk-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-26px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* กล่องทองสองใบเป็นจุดจบของสาย ให้เรืองทองช้า ๆ ไว้ดึงสายตา */
+.bk-slot.gold:not(.tbd) {
+  animation: bk-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both, bk-gold 2.6s 0.8s ease-in-out infinite;
+}
+
+@keyframes bk-gold {
+  0%,
+  100% {
+    text-shadow: 0 2px 8px rgb(0 0 0 / 0.6);
+  }
+  50% {
+    text-shadow: 0 2px 8px rgb(0 0 0 / 0.6), 0 0 26px rgb(255 214 120 / 0.9), 0 0 8px rgb(255 240 200 / 0.7);
+  }
+}
+
+/* ---------- แถบตารางแมตช์ ---------- */
+
+/* แผงนี้ "วาดเอง" ทั้งหมด ไม่ได้วางทับกราฟิกเหมือน overlay ตัวอื่นในระบบ
+   จึงต้องมีพื้นหลัง ขอบ และเงาของตัวเอง
+
+   ใช้ flex เรียงแถวต่อกันจากบนลงล่าง ไม่ได้ fix พิกัดทีละแถว
+   เพราะจำนวนแมตช์ต่อวันไม่เท่ากัน แถวที่ไม่ใช้ต้องหายไปแล้วแถวที่เหลือเลื่อนขึ้นมาชิดกันเอง */
+.sc {
+  --sc-x: 48px; /* ระยะจากขอบซ้ายจอ */
+  --sc-y: 190px; /* ขอบบนของแถบ */
+  --sc-w: 420px;
+  --sc-gap: 26px; /* ระยะระหว่างแมตช์ */
+
+  --sc-accent: #e832d8; /* สีป้ายหัวแถว ตั้งให้เข้ากับกราฟิกชุดอื่นของรายการ */
+  --sc-panel: rgba(16, 6, 26, 0.86);
+  --sc-edge: rgba(232, 50, 216, 0.5);
+
+  --sc-label-h: 40px;
+  --sc-label-size: 20px;
+  --sc-body-h: 112px;
+  --sc-logo: 74px;
+  --sc-score-size: 36px;
+  --sc-time-size: 15px;
+
+  position: absolute;
+  left: var(--sc-x);
+  top: var(--sc-y);
+  width: var(--sc-w);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sc-gap);
+}
+
+.sc-slot {
+  animation: sc-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--sc-i) * 0.13s);
+}
+
+@keyframes sc-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-46px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ป้ายหัวแถว — ตัดมุมสองข้างให้เป็นทรงเดียวกับป้ายในกราฟิกชุดอื่นของรายการ */
+.sc-label {
+  height: var(--sc-label-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(90deg, rgb(232 50 216 / 0.35), var(--sc-accent) 22%, var(--sc-accent) 78%, rgb(232 50 216 / 0.35));
+  clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 100%, 0 100%);
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.sc-label .t {
+  font-size: var(--sc-label-size);
+  white-space: nowrap;
+}
+
+.sc-body {
+  height: var(--sc-body-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 14px;
+  background: var(--sc-panel);
+  border-bottom: 2px solid var(--sc-edge);
+}
+
+.sc-logo {
+  width: var(--sc-logo);
+  height: var(--sc-logo);
+  object-fit: contain;
+  flex: none;
+}
+
+/* ช่องตราที่ยังไม่ได้เลือกไฟล์ ยังต้องกินที่เท่าเดิม ไม่งั้นสกอร์จะเลื่อนไปอยู่ไม่กลางกล่อง */
+.sc-logo.empty {
+  visibility: hidden;
+}
+
+.sc-mid {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.sc-score {
+  min-width: 118px;
+  padding: 5px 10px;
+  text-align: center;
+  background: #05010a;
+  border: 1px solid rgb(232 50 216 / 0.4);
+  font-family: var(--font-display);
+  font-size: var(--sc-score-size);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.sc-time {
+  font-size: var(--sc-time-size);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+
+/* แถวแบบข้อความเดียว (เช่น SHOWMATCH) กินเต็มความกว้าง ไม่มีตราสองข้าง */
+.sc-solo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.sc-solo .big {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: linear-gradient(180deg, #fff2c8, #e8b84b);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------- lower third ---------- */
+
+.lower-third {
+  position: absolute;
+  left: 96px;
+  bottom: 120px;
+  display: flex;
+  align-items: stretch;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-left: 6px solid #2f81f7;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 16px 30px;
+  min-width: 420px;
+  transform: translateX(-40px);
+  opacity: 0;
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.42s ease;
+}
+
+.lower-third.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.lower-third .title {
+  font-family: var(--font-display);
+  font-size: 42px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.05;
+}
+
+.lower-third .subtitle {
+  font-size: 19px;
+  opacity: 0.78;
+  margin-top: 4px;
+}
+
+/* ---------- sponsors ---------- */
+
+.sponsor-strip {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sponsor-slot {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 46px;
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+
+.sponsor-slot.show {
+  opacity: 1;
+}
+
+.sponsor-slot img {
+  max-height: 120px;
+  max-width: 360px;
+  object-fit: contain;
+}
+
+/* ---------- countdown ---------- */
+
+.countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  animation: fade-in 0.5s ease both;
+}
+
+.countdown .lbl {
+  font-size: 27px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  opacity: 0.78;
+}
+
+.countdown .clock {
+  font-family: var(--font-display);
+  font-size: 210px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 8px 40px rgb(0 0 0 / 0.6);
+}
+
+.countdown .clock.low {
+  color: #ff6b6b;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}

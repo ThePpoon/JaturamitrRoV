@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.vite/
+.env
+state.json
+*.bak
+
+# ไฟล์วิดีโอขนาดใหญ่ เก็บไว้นอก git (เกินขนาดที่ GitHub แนะนำ และไม่ได้ใช้ตอน build)
+# ตัวที่ระบบใช้จริงคือไฟล์ใน C:/ROV_Overlay/ ที่ OBS ชี้ไป ไม่ใช่ไฟล์ใน repo
+animation/bj backstage.mp4
+Recording*.mp4
